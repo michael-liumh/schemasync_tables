@@ -216,7 +216,8 @@ def parse_cmd_line(fn):
                             dest="alert_url",
                             type=str,
                             help="New feature: when schema is not sync, "
-                                 "send alert to fei shu with fei shu web hook url")
+                                 "send alert to fei shu with fei shu web hook url"
+                                 "(tips: result file will be deleted.)")
 
         args = parser.parse_args(sys.argv[1:])
         if args.show_version:
