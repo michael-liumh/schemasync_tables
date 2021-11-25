@@ -103,7 +103,8 @@ def parse_cmd_line(fn):
         """ % sys.argv[0]
         description = """A MySQL Schema Synchronization Utility"""
 
-        parser = argparse.ArgumentParser(description=description, usage=usage, add_help=False)
+        parser = argparse.ArgumentParser(description=description, usage=usage, add_help=False,
+                                         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         parser.add_argument('--help',
                             action='store_true',
                             dest='help',
