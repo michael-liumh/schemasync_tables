@@ -217,8 +217,16 @@ def parse_cmd_line(fn):
                             dest="alert_url",
                             type=str,
                             help="New feature: when schema is not sync, "
-                                 "send alert to fei shu with fei shu web hook url"
+                                 "send alert to fei shu with fei shu web hook url "
                                  "(tips: result file will be deleted.)")
+
+        parser.add_argument("--no-delete",
+                            dest="no_delete_result",
+                            action="store_true",
+                            default=False,
+                            help="New feature: when use --url args, "
+                                 "do not delete the result file "
+                                 "(tips: default is delete.)")
 
         args = parser.parse_args(sys.argv[1:])
         if args.show_version:
@@ -227,11 +235,13 @@ def parse_cmd_line(fn):
 
         need_print_help = False if args else True
         if args.help or need_print_help or not args.source_db or not args.target_db:
+            if not args.source_db or not args.target_db:
+                logger.error('Missing source or target instance.')
             parser.print_help()
             return 0
 
         if not args.source_db or not args.target_db:
-            print('Missing args source or target')
+            logger.error('Missing source or target instance.')
             return 0
 
         return fn(**dict(sourcedb=args.source_db[0],
@@ -249,7 +259,8 @@ def parse_cmd_line(fn):
                          filter_triggers=args.filter_triggers,
                          filter_procedures=args.filter_procedures,
                          only_sync_exists_tables=args.only_sync_exists_tables,
-                         alert_url=args.alert_url))
+                         alert_url=args.alert_url,
+                         no_delete_result=args.no_delete_result))
 
     return processor
 
@@ -258,7 +269,7 @@ def app(sourcedb='', targetdb='', version_filename=False,
         output_directory=None, log_directory=None, no_date=False,
         tag=None, charset=None, sync_auto_inc=False, sync_comments=False,
         filter_tables=None, filter_views=None, filter_triggers=None, filter_procedures=None,
-        only_sync_exists_tables=False, alert_url=None):
+        only_sync_exists_tables=False, alert_url=None, no_delete_result=False):
     """Main Application"""
 
     options = locals()
@@ -344,7 +355,7 @@ def app(sourcedb='', targetdb='', version_filename=False,
                     tag=tag, charset=charset, sync_auto_inc=sync_auto_inc, sync_comments=sync_comments,
                     filter_tables=filter_tables, filter_views=filter_views, filter_triggers=filter_triggers,
                     filter_procedures=filter_procedures, only_sync_exists_tables=only_sync_exists_tables,
-                    alert_url=None)
+                    alert_url=alert_url, no_delete_result=no_delete_result)
             except DatabaseError as e:
                 logging.error("MySQL Error %d: %s (Ignore)" % (e.args[0], e.args[1]))
         return 1
@@ -477,10 +488,11 @@ def app(sourcedb='', targetdb='', version_filename=False,
                 target_addr = target_obj.host + ':' + str(target_obj.port) + '/' + target_obj.selected.name
                 send_alert(p_buffer.name, target_addr, alert_url)
 
-                os.remove(p_buffer.name)
-                os.remove(r_buffer.name)
-                logger.info('deleted ' + str(p_buffer.name))
-                logger.info('deleted ' + str(r_buffer.name))
+                if not no_delete_result:
+                    os.remove(p_buffer.name)
+                    os.remove(r_buffer.name)
+                    logger.info('deleted ' + str(p_buffer.name))
+                    logger.info('deleted ' + str(r_buffer.name))
 
         except OSError as e:
             p_buffer.delete()
