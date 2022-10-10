@@ -64,7 +64,9 @@ def create_pnames(db, tag=None, date_format="%Y%m%d", no_date=False):
     """
     d = datetime.datetime.now().strftime(date_format)
     if tag:
-        tag = re.sub('[^A-Za-z0-9_-]', '', tag)
+        tag = re.sub('[^A-Za-z0-9_-]', '_', tag)
+        if '__' in tag:
+            tag = re.sub('_+', '_', tag)
         basename = "%s_%s.%s" % (db, tag, d)
     elif no_date:
         basename = "%s" % (db)

@@ -217,16 +217,7 @@ def parse_cmd_line(fn):
                             dest="alert_url",
                             type=str,
                             help="New feature: when schema is not sync, "
-                                 "send alert to fei shu with fei shu web hook url "
-                                 "(tips: result file will be deleted.)")
-
-        parser.add_argument("--no-delete",
-                            dest="no_delete_result",
-                            action="store_true",
-                            default=False,
-                            help="New feature: when use --url args, "
-                                 "do not delete the result file "
-                                 "(tips: default is delete.)")
+                                 "send alert to fei shu with fei shu web hook url")
 
         args = parser.parse_args(sys.argv[1:])
         if args.show_version:
@@ -260,7 +251,7 @@ def parse_cmd_line(fn):
                          filter_procedures=args.filter_procedures,
                          only_sync_exists_tables=args.only_sync_exists_tables,
                          alert_url=args.alert_url,
-                         no_delete_result=args.no_delete_result))
+                         ))
 
     return processor
 
@@ -269,7 +260,7 @@ def app(sourcedb='', targetdb='', version_filename=False,
         output_directory=None, log_directory=None, no_date=False,
         tag=None, charset=None, sync_auto_inc=False, sync_comments=False,
         filter_tables=None, filter_views=None, filter_triggers=None, filter_procedures=None,
-        only_sync_exists_tables=False, alert_url=None, no_delete_result=False):
+        only_sync_exists_tables=False, alert_url=None):
     """Main Application"""
 
     options = locals()
@@ -355,7 +346,7 @@ def app(sourcedb='', targetdb='', version_filename=False,
                     tag=tag, charset=charset, sync_auto_inc=sync_auto_inc, sync_comments=sync_comments,
                     filter_tables=filter_tables, filter_views=filter_views, filter_triggers=filter_triggers,
                     filter_procedures=filter_procedures, only_sync_exists_tables=only_sync_exists_tables,
-                    alert_url=alert_url, no_delete_result=no_delete_result)
+                    alert_url=alert_url)
             except DatabaseError as e:
                 logging.error("MySQL Error %d: %s (Ignore)" % (e.args[0], e.args[1]))
         return 1
@@ -478,21 +469,30 @@ def app(sourcedb='', targetdb='', version_filename=False,
         try:
             p_buffer.save()
             r_buffer.save()
+
+            source_addr = source_obj.host + ':' + str(source_obj.port) + '/' + source_obj.selected.name
+            target_addr = target_obj.host + ':' + str(target_obj.port) + '/' + target_obj.selected.name
+            source_addr_rename = f'{source_obj.host.replace(".", "_")}_{source_obj.port}'
+            target_addr_rename = f'{target_obj.host.replace(".", "_")}_{target_obj.port}'
+            patch_filename = os.path.join(
+                output_directory,
+                f'{source_addr_rename}__{target_addr_rename}__{p_fname[:-4].replace(".", "_")}.sql'
+            )
+            revert_filename = os.path.join(
+                output_directory,
+                f'{source_addr_rename}__{target_addr_rename}__{r_fname[:-4].replace(".", "_")}.sql'
+            )
+            os.renames(p_buffer.name, patch_filename)
+            os.renames(r_buffer.name, revert_filename)
+
             logging.info("Migration scripts created for mysql://%s:%s/%s\n"
                          "Patch Script: %s\nRevert Script: %s"
                          % (target_obj.host, target_obj.port, target_obj.selected.name,
-                            p_buffer.name, r_buffer.name))
+                            patch_filename, revert_filename))
 
-            if os.path.exists(p_buffer.name) and p_buffer.modified and alert_url:
+            if alert_url:
                 logger.warning("alerting...")
-                target_addr = target_obj.host + ':' + str(target_obj.port) + '/' + target_obj.selected.name
-                send_alert(p_buffer.name, target_addr, alert_url)
-
-                if not no_delete_result:
-                    os.remove(p_buffer.name)
-                    os.remove(r_buffer.name)
-                    logger.info('deleted ' + str(p_buffer.name))
-                    logger.info('deleted ' + str(r_buffer.name))
+                send_alert(patch_filename, source_addr, target_addr, alert_url)
 
         except OSError as e:
             p_buffer.delete()
@@ -503,23 +503,20 @@ def app(sourcedb='', targetdb='', version_filename=False,
     return 0
 
 
-def send_alert(filename, target_addr, alert_url):
+def send_alert(filename, source_addr, target_addr, alert_url):
     if os.path.isfile(filename):
         with open(filename, encoding='utf8') as f:
             infos = list(map(lambda s: s.replace('\n', ''), f.readlines()))[7:]
 
-        infos.remove('SET FOREIGN_KEY_CHECKS = 0;')
-        infos.remove('SET FOREIGN_KEY_CHECKS = 1;')
+        infos_msg = "\n".join(infos)
+        alert_msg = f'【源实例库】{source_addr}\n' \
+                    f'【目标实例库】{target_addr}\n' \
+                    f'-------- 同步SQL --------\n' \
+                    f'{infos_msg}'
+        logger.info(alert_msg)
 
-        alert_msg = {
-            '目标实例': target_addr,
-            '同步SQL': infos
-        }
-        msg = json.dumps(alert_msg, ensure_ascii=False, indent=4)
-        logger.info(msg)
-
-        title = '分库表结构不一致告警'
-        utils.send_msg_2_fei_shu(alert_url, msg, title, is_at_all=True)
+        title = f'目标实例库表结构不一致：{target_addr}'
+        utils.send_msg_2_fei_shu(alert_url, alert_msg, title, is_at_all=True)
     else:
         logger.error(str(filename) + ' does not exists.')
 
